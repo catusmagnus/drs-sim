@@ -5,7 +5,7 @@ import { sleep } from './functions'
 
 // Typescript:
 import Client from './client'
-import { IServerState, TWorkingListMember, TContent, TUpdateContent, TProblem } from './types'
+import { IServerState, TWorkingListMember, TContent, TUpdateContent, TProblem, TProblemMember } from './types'
 
 
 // Constants:
@@ -115,7 +115,7 @@ class Server {
     if (focusWL.length === 0) {
       // TODO: Print message in log.
       return
-    } else focusWL.forEach(member => this.state.workingList.set(member.pIP, { ...this.state.workingList.get(member.pIP), isSolving: true }))
+    } else focusWL.forEach(member => { this.state.workingList.get(member.pIP).isSolving = true })
     for (const content of updateContentList) {
       const problemID = Math.random().toString(36).replace('0.', '')
       this.state.activeProblems.set(problemID, {
@@ -137,36 +137,46 @@ class Server {
   }
   registerConclusion = async (pIP: string, problemID: string, conclusion: boolean) => {
     const WLMember = this.state.workingList.get(pIP)
-    if (WLMember || !WLMember?.isSolving || WLMember?.currentProblemID !== problemID) return
+    if (!WLMember || !WLMember?.isSolving || WLMember?.currentProblemID !== problemID) return
     const problem = this.state.activeProblems.get(problemID), problemMember = problem.members.find(member => member.pIP === pIP)
     problemMember.conclusion = conclusion
     WLMember.currentProblemID = ''
     WLMember.isSolving = false
     WLMember.problemsSolved = WLMember.problemsSolved + 1
-    this.judgeProblem(problem)
+    this.judgeProblem(problem, problemID)
   }
-  judgeProblem = (problem: TProblem) => {
+  judgeProblem = (problem: TProblem, problemID: string) => {
     const conclusions = { yes: 0, no: 0 }
     problem.members.forEach(member => {
       if (member.conclusion === true) conclusions.yes++
       else if (member.conclusion === false) conclusions.no++
     })
     if (Date.now() - problem.time >= problemExpiryInterval) {
-      // Problem has expired, don't wait for others.
-      if (conclusions.yes > conclusions.no) {
-        this.state.contentList.get(problem.content.)
-      } else if (conclusions.yes <= conclusions.no)  {
-
+      this.freeProblemWorkers(problem.members.filter(member => member.conclusion === undefined))
+      if (conclusions.yes > conclusions.no) this.updateContent(problem.content)
+      this.deleteProblem(problemID)
+    } else {
+      if (conclusions.yes > Math.ceil(problem.members.length / 2)) this.updateContent(problem.content)
+      else if (conclusions.no >= Math.floor(problem.members.length / 2)) {
+        this.freeProblemWorkers(problem.members.filter(member => member.conclusion === undefined))
+        this.deleteProblem(problemID)
       }
     }
   }
-  updateContent = ({ _id, _v, score }: { _id: string, _v: number, score: number }) => {
+  updateContent = ({ _id, _v, score }: { _id: string, _v: number, score: number }): boolean => {
     const content = this.state.contentList.get(_id)
     if (content._v === _v) {
       content.score = score
-    } else {
-      // Stale data.
+      return true
     }
+    return false
+  }
+  freeProblemWorkers = (members: TProblemMember[]) => {
+    members.forEach(member => {
+      const workingListMember = this.state.workingList.get(member.pIP)
+      workingListMember.currentProblemID = ''
+      workingListMember.isSolving = false
+    })
   }
   deleteProblem = (problemID: string) => {
     this.state.activeProblems.delete(problemID)

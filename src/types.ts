@@ -7,6 +7,11 @@ export type TWorkingListMember = {
   time: number
 }
 
+export type TProblemMember = {
+  pIP: string,
+  conclusion: boolean
+}
+
 export type TProblem = {
   content: {
     _id: string
@@ -14,10 +19,7 @@ export type TProblem = {
     score: number
   }
   initiator: string
-  members: {
-    pIP: string,
-    conclusion: boolean
-  }[]
+  members: TProblemMember[]
   time: number
 }
 
